@@ -65,6 +65,7 @@ app.use(express.json());
 // app.use(express.static('public'))
 const corsOptions = {
     origin: 'https://frontend-theta-mocha-38.vercel.app',
+     methods: 'GET,POST,PUT,DELETE',
     credentials: true,
   };
   
