@@ -84,6 +84,8 @@ app.use(cors({
   credentials: true,
   allowedHeaders: "Content-Type,Authorization"
 }));
+app.options('*', cors());  // Preflight requests
+
  
   
 app.use("/www", express.static("uploads"));
