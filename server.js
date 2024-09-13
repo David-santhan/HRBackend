@@ -60,31 +60,39 @@ const upload = multer({
 
 const app =express();
 app.use(express.json());
-// app.use(express.static('public'))
+
 const corsOptions = {
-    origin: 'https://frontend-theta-mocha-38.vercel.app',
-    credentials: true,
-  };
+  origin: 'https://frontend-fge2.vercel.app',  // Your frontend origin
+  methods: 'GET,POST,PUT,DELETE',
+  credentials: true
+};
+
+app.use(cors(corsOptions));
+// app.use(express.static('public'))
+// const corsOptions = {
+//     origin: 'https://frontend-theta-mocha-38.vercel.app',
+//     credentials: true,
+//   };
   
-  app.use(cors(corsOptions));
+//   app.use(cors(corsOptions));
 
-const allowedOrigins = ['http://localhost:3000', 'https://frontend-theta-mocha-38.vercel.app'];
+// const allowedOrigins = ['http://localhost:3000', 'https://frontend-theta-mocha-38.vercel.app'];
 
-app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin like mobile apps or curl requests
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-      return callback(new Error(msg), false);
-    }
-    return callback(null, true);
-  },
-  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
-  credentials: true,
-  allowedHeaders: "Content-Type,Authorization"
-}));
-app.options('*', cors());  // Preflight requests
+// app.use(cors({
+//   origin: function (origin, callback) {
+//     // Allow requests with no origin like mobile apps or curl requests
+//     if (!origin) return callback(null, true);
+//     if (allowedOrigins.indexOf(origin) === -1) {
+//       const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+//       return callback(new Error(msg), false);
+//     }
+//     return callback(null, true);
+//   },
+//   methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
+//   credentials: true,
+//   allowedHeaders: "Content-Type,Authorization"
+// }));
+// app.options('*', cors());  // Preflight requests
 
 // res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
 
