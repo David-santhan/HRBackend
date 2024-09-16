@@ -238,9 +238,9 @@ app.get('/userDetailsofAssignedClient/:clientId', async (req, res) => {
 // Assign Requirement to Users
 app.get('/userDetailstoAssignRequirement/:reqId/:userId', async (req, res) => {
     const { reqId, userId } = req.params;
-    
+   
     try {
-        // Find the user with the provided userId
+        // Find the user with the provided userId to get their team members
         const user = await NewUser.findById(userId);
         
         if (!user) {
@@ -250,14 +250,27 @@ app.get('/userDetailstoAssignRequirement/:reqId/:userId', async (req, res) => {
         // Get the user's Team array (assuming it's an array of user IDs)
         const teamIds = user.Team; // This is an array of user IDs
 
-        // Find the users in the Team who do not have the specified reqId in their Requirements array
+        // If the user has no team, return an empty array for team members
+        if (!teamIds || teamIds.length === 0) {
+            return res.json({ teamMembers: [], requirementDetails: null });
+        }
+
+        // Find the team members who do not have the specified reqId in their Requirements array
         const teamMembers = await NewUser.find({
-            _id: { $in: teamIds }, // Find users whose IDs are in the Team array
-            UserType: { $in: ["User"] },
+            _id: { $in: teamIds }, // Filter users whose IDs are in the Team array
+            UserType: { $in: ["User"] }, // Ensure UserType is "User"
             Requirements: { $ne: reqId }  // Exclude users who already have this reqId in their Requirements array
         });
 
-        res.json(teamMembers);  // Return the details of the team members
+        // Find the requirement details using the reqId from the NewRequirement schema
+        const requirementDetails = await NewRequirment.findById(reqId);
+        
+        if (!requirementDetails) {
+            return res.status(404).json({ message: "Requirement not found" });
+        }
+
+        // Return both team members and the requirement details
+        res.json({ teamMembers, requirementDetails });
     } catch (error) {
         res.status(500).json({ message: "Server Error", error });
     }
