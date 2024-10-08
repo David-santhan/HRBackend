@@ -13,8 +13,6 @@ const { inflate } = require("zlib");
 const { truncate } = require("fs");
 dotenv.config()
 
-
-
 // email Config
 
 const transporter = nodemailer.createTransport({
@@ -201,11 +199,10 @@ app.get("/userDetailsHome",async(req,res)=>{
     let userDetailshome=await NewUser.find();
     res.json(userDetailshome);
 })
-
 // Assign Clients to Users
 app.get('/userDetailstoAssignClient/:clientId', async (req, res) => {
     const clientId = req.params.clientId;
-    
+
     try {
         // Find users who do not have the specified client ID in their Clients array
         const userDetails = await NewUser.find({
@@ -213,11 +210,39 @@ app.get('/userDetailstoAssignClient/:clientId', async (req, res) => {
             Clients: { $ne: clientId }  // $ne operator excludes users with the clientId in Clients array
         });
 
-        res.json(userDetails);
+        // Get the count of users
+        const count = userDetails.length;
+
+        // Now, to get the count of users for each clientId in the Clients array
+        const clientCounts = await NewUser.aggregate([
+            { $unwind: "$Clients" },  // Deconstruct the Clients array
+            { $group: {
+                _id: "$Clients",  // Group by clientId
+                userCount: { $sum: 1 },  // Count the number of users for each clientId
+                users: { $push: "$$ROOT" }  // Push the entire user document
+            }},
+            { $lookup: {
+                from: 'clients',  // The name of the collection for clients (adjust if necessary)
+                localField: '_id',
+                foreignField: '_id',
+                as: 'clientInfo'  // Join client info based on clientId
+            }},
+            { $unwind: "$clientInfo" },  // Optional: to flatten the client info
+            { $project: {
+                _id: 0,  // Exclude the default _id
+                clientId: "$_id",  // Include the clientId
+                userCount: 1,
+                users: 1,
+                clientName: "$clientInfo.name"  // Assuming the Client schema has a name field
+            }}
+        ]);
+
+        res.json({ count, userDetails, clientCounts });
     } catch (error) {
         res.status(500).json({ message: "Server Error", error });
     }
 });
+
 
 app.get('/userDetailsofAssignedClient/:clientId', async (req, res) => {
     const clientId = req.params.clientId;
@@ -228,8 +253,10 @@ app.get('/userDetailsofAssignedClient/:clientId', async (req, res) => {
             UserType: { $in: ["User", "TeamLead"] },
             Clients: { $in: clientId }  // $ne operator excludes users with the clientId in Clients array
         });
+ // Get the count of users
+ const count = userDetails.length;
 
-        res.json(userDetails);
+ res.json({ count, userDetails });
     } catch (error) {
         res.status(500).json({ message: "Server Error", error });
     }
@@ -276,15 +303,69 @@ app.get('/userDetailstoAssignRequirement/:reqId/:userId', async (req, res) => {
     }
 });
 
+// app.get('/userDetailstoAssignRequirement/:reqId/:userId', async (req, res) => {
+//     const { reqId, userId } = req.params;
+   
+//     try {
+//         // Find the user with the provided userId to get their team members
+//         const user = await NewUser.findById(userId);
+        
+//         if (!user) {
+//             return res.status(404).json({ message: "User not found" });
+//         }
 
-app.get('/userDetailsofAssignedRequirement/:reqId', async (req, res) => {
+//         // Get the user's Team array (assuming it's an array of user IDs)
+//         const teamIds = user.Team; // This is an array of user IDs
+
+//         // If the user has no team, return an empty array for team members
+//         if (!teamIds || teamIds.length === 0) {
+//             return res.json({ teamMembers: [], requirementDetails: null });
+//         }
+
+//         // Find the team members who do not have the specified reqId in their Requirements array
+//         const teamMembers = await NewUser.find({
+//             _id: { $in: teamIds }, // Filter users whose IDs are in the Team array
+//             UserType: { $in: ["User"] }, // Ensure UserType is "User"
+//             Requirements: { $ne: reqId }  // Exclude users who already have this reqId in their Requirements array
+//         });
+
+//         // Find the requirement details using the reqId from the NewRequirement schema
+//         const requirementDetails = await NewRequirment.findById(reqId);
+        
+//         if (!requirementDetails) {
+//             return res.status(404).json({ message: "Requirement not found" });
+//         }
+
+//         // Get the count of users assigned to the specific reqId
+//         const usersAssignedCount = await NewUser.countDocuments({
+//             Requirements: reqId // Count users who already have this requirement assigned
+//         });
+
+//         // Return both team members and the requirement details along with the count
+//         res.json({ teamMembers, requirementDetails, usersAssignedCount });
+//     } catch (error) {
+//         res.status(500).json({ message: "Server Error", error });
+//     }
+// });
+
+app.get('/userDetailsofAssignedRequirement/:reqId/:userId', async (req, res) => {
     const reqId = req.params.reqId;
-    
+    const userId = req.params.userId;
+
     try {
-        // Find users who do not have the specified client ID in their Clients array
+        // Step 1: Find the user to get their Team array
+        const user = await NewUser.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        const teamIds = user.Team; // Get the Team array
+
+        // Step 2: Find users in the Team who have the specified reqId in their Requirements
         const userDetails = await NewUser.find({
             UserType: { $in: ["User"] },
-            Requirements: { $in: reqId }  // $ne operator excludes users with the clientId in Clients array
+            Requirements: reqId, // Users with the specified reqId
+            _id: { $in: teamIds } // Users present in the Team
         });
 
         res.json(userDetails);
@@ -292,7 +373,6 @@ app.get('/userDetailsofAssignedRequirement/:reqId', async (req, res) => {
         res.status(500).json({ message: "Server Error", error });
     }
 });
-
 // Route to get users with UserType 'User'
 app.get("/getUserDataToADDtoTeam", async (req, res) => {
     try {
@@ -420,7 +500,6 @@ app.get("/ResetPasswordpage/:id/:token",async(req,res)=>{
 
     }
 })
-
 //  Change Password
 app.post("/:id/:token",async(req,res)=>{
     const {id,token} = req.params;
@@ -484,15 +563,11 @@ app.get("/getUserData/:id", async (req, res) => {
     }
 });
 
-
-
  app.get("/getUserdatatoUpdate/:id",async(req,res)=>{
     let userdetails = await NewUser.findById({_id:req.params.id});
     res.json(userdetails); 
  }) 
-
 // Assuming you are using Express and Mongoose
-
 app.put('/updateUser/:id', async (req, res) => {
     const { id } = req.params;
     const { name, Code, email, status, usertype, profile, Team } = req.body;
@@ -643,10 +718,50 @@ let clientSchema= new mongoose.Schema({
 }
 );
 
-app.get("/ClientsList",async(req,res)=>{
-    let ClientsList = await NewClient.find();
-    res.json(ClientsList);
-})
+// app.get("/ClientsList",async(req,res)=>{
+//     let ClientsList = await NewClient.find();
+//     res.json(ClientsList);
+// })
+
+app.get("/ClientsList", async (req, res) => {
+    try {
+        const clientsList = await NewClient.find();
+
+        const clientUserCounts = [];
+
+        for (const client of clientsList) {
+            // Find users for the current client and filter by userType
+            const users = await NewUser.find({
+                Clients: client._id,
+            });
+
+            const userCount = users.length;
+
+            // Count users of type 'user' and 'teamlead'
+            const allusers = await NewUser.find({
+                UserType: { $in: ['User', 'TeamLead'] }
+            } );
+            let allusersCount = allusers.length;
+            
+            clientUserCounts.push({
+                clientId: client._id,
+                clientCode: client.ClientCode, // Ensure this field exists in your schema
+                clientName: client.ClientName, // Ensure this field exists in your schema
+                userCount: userCount, // Total user count
+                userTypeCounts:allusersCount, // Count of specific user types
+                clientDetails: {
+                    location: client.Location,
+                    typeOfService: client.Services,
+                }
+            });
+        }
+
+        res.json({ clientUserCounts }); // Ensure this is returned correctly
+    } catch (error) {
+        res.status(500).json({ message: "Server Error", error });
+    }
+});
+
 
 app.get("/ClientsList/:id",async(req,res)=>{
     let ClientsList = await NewClient.find({_id:req.params.id});
@@ -793,6 +908,9 @@ const RequirementSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    role:{
+        type:String,
+    },
     requirementtype:{
       type:String,
       required:true
@@ -826,6 +944,7 @@ const RequirementSchema = new mongoose.Schema({
     },
     claimedBy: [{ userId: String, claimedDate: Date }]   
 });
+
 let NewRequirment = new mongoose.model("Requirements",RequirementSchema);
 
 app.post("/newRequirment",upload.none(),async(req,res)=>{ 
@@ -855,6 +974,7 @@ const formattedAssessments = Array.isArray(assessments) ? assessments.map(item =
           yearsExperience:req.body.yearsExperience,
           relevantExperience:req.body.relevantExperience,
           skill:req.body.skill,
+          role:req.body.role,
           requirementtype:req.body.requirmentType,
           update:req.body.update,
           uploadedBy:req.body.uploadedBy,
@@ -880,9 +1000,9 @@ app.get('/getrequirements', async (req, res) => {
     }
   });
 
-  app.get('/getTeamrequirements/:userId', async (req, res) => {
-    const { userId } = req.params; // Assuming userId is sent as a query parameter
-   console.log(userId)
+app.get('/getTeamrequirements/:userId', async (req, res) => {
+    const { userId } = req.params; 
+  
     try {
       // Step 1: Find the user by userId
       const user = await NewUser.findById(userId);
@@ -901,15 +1021,55 @@ app.get('/getrequirements', async (req, res) => {
       // Step 3: Fetch the requirements that match the client IDs
       const requirements = await NewRequirment.find({ clientId: { $in: clientIds } });
   
-      // Step 4: Return the matching requirements
-      res.json(requirements);
-      
+      if (requirements.length === 0) {
+        return res.status(404).json({ status: "Error", msg: "No requirements found for the associated clients" });
+      }
+  
+      // Step 4: Get the user's Team (team members' IDs)
+      const teamIds = user.Team;
+  
+      if (!teamIds || teamIds.length === 0) {
+        return res.status(404).json({ status: "Error", msg: "No team members associated with this user" });
+      }
+  
+      // Step 5: Find the team members from the NewUser schema
+      const teamMembers = await NewUser.find({ _id: { $in: teamIds } });
+  
+      if (!teamMembers || teamMembers.length === 0) {
+        return res.status(404).json({ status: "Error", msg: "No team members found" });
+      }
+  
+      // Total team member count
+      const totalTeamCount = teamMembers.length;
+  
+      // Step 6: Loop through each requirement and find how many team members have that requirement in their Requirements
+      const result = [];
+  
+      for (const req of requirements) {
+        const requirementId = req._id;
+  
+        // Find the count of team members who have this requirement in their Requirements array
+        const assignedCount = await NewUser.countDocuments({
+          _id: { $in: teamIds },
+          Requirements: requirementId
+        });
+  
+        // Add the requirement, assigned count, and total team count to the result array
+        result.push({
+          requirement: req,
+          assignedCount: assignedCount,
+          totalTeamCount: totalTeamCount
+        });
+      }
+  
+      // Step 7: Return the result (requirements along with the count of team members assigned to each requirement and total team count)
+      res.json(result);
   
     } catch (err) {
       res.status(500).json({ status: "Error", msg: err.message });
     }
   });
-
+  
   app.get('/getHomeReqData/:userId', async (req, res) => {
     const { userId } = req.params;
     console.log(userId);
@@ -945,45 +1105,9 @@ app.get('/getrequirements', async (req, res) => {
         res.status(500).json({ status: "Error", msg: err.message });
     }
 });
-
-
-// app.get('/getrequirements', async (req, res) => {
-//     try {
-//       const requirements = await NewRequirment.aggregate([
-//         {
-//           // Join NewRequirment with NewClient based on the clientId field
-//           $lookup: {
-//             from: 'NewClient', // name of the NewClient collection (make sure this matches)
-//             localField: 'client', // field in NewRequirment that holds the clientId
-//             foreignField: '_id', // field in NewClient that holds the client _id
-//             as: 'clientName' // name for the joined data
-//           }
-//         },
-//         {
-//           // Unwind the clientDetails array to merge it as an object
-//           $unwind: '$clientName'
-//         },
-//         {
-//           // Project only necessary fields (e.g., requirement details and client name)
-//           $project: {
-//             requirementDetails: 1, // include all the fields in NewRequirment
-//             clientName: '$clientName.ClientName' // include ClientName from NewClient
-//           }
-//         }
-//       ]);
   
-//       res.json(requirements);
-//       console.log(requirements)
-//     } catch (err) {
-//       res.json({ status: "Error", msg: err.message });
-//     }
-//   });
-  
-
 app.get('/getrequirements/:id', async (req, res) => {
-    const Id = req.params.id;
-    console.log('Fetching requirement with ID:', Id);
-    
+    const Id = req.params.id;    
     try {
         // Fetch requirement by ID
         const requirement = await NewRequirment.findById(Id);
@@ -1041,8 +1165,7 @@ app.put('/claim/:id', async (req, res) => {
       res.status(500).json({ status: "Fail", msg: "Server error." });
     }
   });
-  
-  
+   
 app.get("/actions/:id/:userid", async (req, res) => {
     try {
         // Extract the requirement ID and user ID from the request parameters
@@ -1089,7 +1212,6 @@ const AssessmentSchema = new mongoose.Schema({
         // required:true
     }
 });
-
 // Define the schema for Candidates
 const CandidateSchema = new mongoose.Schema({
     date: {
@@ -1160,16 +1282,23 @@ const CandidateSchema = new mongoose.Schema({
         type: String,
         required: true
     },
-    internalScreening: {
-        type: String,
-        enum: ['Selected', 'Rejected'],
-        // required: true
-    },
-    sharedWithClient: {
-        type: String,
-        enum: ['Yes', 'No'],
-        // required: true
-    },
+    Status: [
+        {
+            Status: {
+                type: String,
+                required: true
+            },
+            Date: {
+                type: Date,
+                default: Date.now
+            } 
+        }
+    ],
+    // sharedWithClient: {
+    //     type: String,
+    //     enum: ['Yes', 'No'],
+    //     // required: true
+    // },
     feedback: {
         type: String
     },
@@ -1212,7 +1341,6 @@ const CandidateSchema = new mongoose.Schema({
         required: true
     }]
 });
-
 // Define the main schema that includes reqId, recruiterId, candidates, and assessments
 const MainSchema = new mongoose.Schema({
     reqId: {
@@ -1226,7 +1354,6 @@ const MainSchema = new mongoose.Schema({
     candidates: [CandidateSchema],
    
 });
-
 const CandidateModel = mongoose.model('Candidate', MainSchema); // Or the correct model name
 
 const uploadFields = upload.fields([
@@ -1316,7 +1443,7 @@ app.delete('/api/candidates/:id', async (req, res) => {
         );
 
         if (updatedDocument) {
-            res.status(200).json({ message: 'Candidate deleted successfully' });
+            res.status(200).json({ message: 'Candidate deleted successfully ✅' });
         } else {
             res.status(404).json({ message: 'Candidate not found' });
         }
@@ -1325,7 +1452,6 @@ app.delete('/api/candidates/:id', async (req, res) => {
         console.log(error);
     }
 });
-
 // To get Cndidates Count For a Particular Requirments
 app.get('/adminviewactions/:id', async (req, res) => {
     const { id } = req.params;
@@ -1350,7 +1476,6 @@ app.get('/adminviewactions/:id', async (req, res) => {
         res.status(500).json({ error: 'Failed to fetch candidates', details: error });
     }
 });
-
 // To get Claimed Count
 app.get('/api/requirements/:id/claimedByCount', async (req, res) => {
     try {
@@ -1369,7 +1494,6 @@ app.get('/api/requirements/:id/claimedByCount', async (req, res) => {
         console.log(error)
     }
 });
-
 // To get Claimed users Data
 app.get('/api/requirements/:id/claimedByDetails', async (req, res) => {
     try {
@@ -1392,9 +1516,7 @@ app.get('/api/requirements/:id/claimedByDetails', async (req, res) => {
         console.log(error);
     }
 });
-
 // Get the number of candidates added by each recruiter for a specific reqId
-
 app.get('/api/recruiters/:reqId', async (req, res) => {
     const { reqId } = req.params;
     if (!reqId) {
@@ -1447,7 +1569,6 @@ app.get('/api/recruiters/:reqId', async (req, res) => {
         console.error('Server Error:', error);
     }
 });
-
 // Define a route to get candidates by recruiter ID
 app.get('/api/candidates', async (req, res) => {
     try {
@@ -1474,7 +1595,6 @@ app.get('/api/candidates', async (req, res) => {
         res.status(500).json({ message: 'Internal Server Error' });
     }
 });
-
 // Get a specific candidate by ID
 app.get('/candidate/:id', async (req, res) => {
     const candidateId = req.params.id;
@@ -1502,7 +1622,6 @@ app.get('/candidate/:id', async (req, res) => {
         res.status(500).json({ message: 'Internal Server Error' });
     }
 });
-
 // Update candidate details
 app.put('/candidates/:id', async (req, res) => {
     const candidateId = req.params.id;
@@ -1535,7 +1654,6 @@ app.put('/candidates/:id', async (req, res) => {
         res.status(500).json({ message: 'Server error' });
     }
 });
-
 // Assig Client to User
 app.post('/assignClient/:userId/:clientId', async (req, res) => {
     const { userId,clientId} = req.params;
@@ -1573,7 +1691,6 @@ app.post('/assignClient/:userId/:clientId', async (req, res) => {
         res.status(500).json({ status: 'error', msg: 'An error occurred while assigning the client.' });
     }
 });
-
 // Get TL Home Details
 app.get('/TlHome/:id', async (req, res) => {
     try {
@@ -1601,7 +1718,6 @@ app.get('/TlHome/:id', async (req, res) => {
         res.status(500).json({ message: "Server Error", error: err });
     }
 });
-
 // Get Team Client Details
 app.get('/TlClients/:id', async (req, res) => {
     try {
@@ -1629,7 +1745,6 @@ app.get('/TlClients/:id', async (req, res) => {
         res.status(500).json({ message: "Server Error", error: err });
     }
 });
-
 // Assign Requirement to User
 app.post('/assignReq/:userId/:requirementId', async (req, res) => {
     const { userId, requirementId } = req.params;
@@ -1671,7 +1786,6 @@ app.post('/assignReq/:userId/:requirementId', async (req, res) => {
         res.status(500).json({ status: 'error', msg: 'An error occurred while assigning the requirement.' });
     }
 });
-
 // Get Total Count of the candidates
 app.get('/getTeamRequirementsCount/:userId', async (req, res) => {
     const { userId } = req.params;
@@ -1774,6 +1888,298 @@ app.get('/getTeamRequirementsCount/:userId', async (req, res) => {
         res.status(500).json({ status: "Error", msg: err.message });
     }
 });
+
+app.get('/getRequirementsCandidatesCount/:recruiterId', async (req, res) => {
+    const { recruiterId } = req.params;
+
+    try {
+        // Step 1: Fetch all requirements related to the recruiter
+        const recruiterRequirements = await CandidateModel.find({
+            recruiterId: recruiterId
+        });
+
+        if (recruiterRequirements.length === 0) {
+            return res.status(404).json({ status: "Error", msg: "No requirements found for this recruiter" });
+        }
+
+        // Step 2: Collect reqIds from the recruiterRequirements
+        const reqIds = recruiterRequirements.map(req => req.reqId);
+
+        // Step 3: Fetch requirement details using reqIds
+        const requirements = await NewRequirment.find({
+            _id: { $in: reqIds } // Convert string ids to ObjectId
+        });
+
+        // Step 4: Create a map to store candidate counts for each reqId
+        const reqIdToCandidateCount = {};
+
+        // Populate the candidate counts
+        recruiterRequirements.forEach(req => {
+            if (reqIdToCandidateCount[req.reqId]) {
+                reqIdToCandidateCount[req.reqId] += req.candidates.length;
+            } else {
+                reqIdToCandidateCount[req.reqId] = req.candidates.length;
+            }
+        });
+
+        // Step 5: Attach candidate counts to the requirement details
+        const requirementsWithCounts = requirements.map(req => ({
+            ...req.toObject(),
+            candidateCount: reqIdToCandidateCount[req._id.toString()] || 0
+        }));
+
+        // Step 6: Send the response with the requirements and candidate counts
+        res.json({
+            status: "Success",
+            requirements: requirementsWithCounts
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ status: "Error", msg: err.message });
+    }
+});
+
+app.get('/requirementDetailsWithAssignedUsers/:userId', async (req, res) => {
+    const userId = req.params.userId;
+
+    try {
+        // Step 1: Find the user to get their Team array and Clients
+        const user = await NewUser.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        const teamIds = user.Team; // Get the Team array
+        const userClients = user.Clients; // Get the Clients array
+
+        // Step 2: Find all users in the team
+        const teamUsers = await NewUser.find({
+            _id: { $in: teamIds } // Users in the same team
+        });
+
+        // Step 3: Find requirements associated with the user's clients from NewRequirement schema
+        const requirements = await NewRequirment.find({
+            clientId: { $in: userClients } // Find requirements with the client's IDs
+        });
+
+        // Get today's date in UTC for comparison
+        const today = new Date();
+        today.setUTCHours(0, 0, 0, 0); // Start of today
+        const tomorrow = new Date(today);
+        tomorrow.setUTCDate(today.getUTCDate() + 1); // Start of the next day
+
+        // Step 4: Get requirement details, count users assigned to each requirement, along with their names, total candidates, and today's uploaded candidates
+        const requirementDetailsWithUsernames = await Promise.all(
+            requirements.map(async (requirement) => {
+                const requirementId = requirement._id;
+
+                // Find users in the team who are assigned this specific requirement
+                const assignedUsersForThisRequirement = teamUsers.filter(teamUser => teamUser.Requirements.includes(requirementId));
+
+                // Extract usernames and count for this requirement
+                const usernamesForThisRequirement = assignedUsersForThisRequirement.map(user => user.EmployeeName);
+                const userCountForThisRequirement = assignedUsersForThisRequirement.length;
+
+                // Step 5: Get the total count of candidates attached to the requirement
+                const requirementWithCandidates = await CandidateModel.findOne({ reqId: requirementId }).select('candidates');
+                const totalCandidateCount = requirementWithCandidates ? requirementWithCandidates.candidates.length : 0;
+
+                // Step 6: Filter candidates uploaded today
+                const todayCandidates = requirementWithCandidates ? requirementWithCandidates.candidates.filter(candidate => {
+                    const uploadedOnDate = new Date(candidate.uploadedOn);
+                    return uploadedOnDate >= today && uploadedOnDate < tomorrow;
+                }) : [];
+
+                const todayCandidateCount = todayCandidates.length;
+
+                // Step 7: Collect total candidate details for the requirement
+                const totalCandidatesDetails = requirementWithCandidates ? requirementWithCandidates.candidates : [];
+
+                // Step 8: Return the relevant details
+                return {
+                    requirementDetails: requirement, // Details of the requirement
+                    userCount: userCountForThisRequirement, // Number of users assigned to this requirement
+                    assignedUsernames: usernamesForThisRequirement, // Array of usernames assigned to this requirement
+                    totalCandidateCount: totalCandidateCount, // Total number of candidates attached to the requirement
+                    todayCandidateCount: todayCandidateCount, // Count of candidates uploaded today
+                    todayCandidates: todayCandidates, // Array of today's uploaded candidates
+                    totalCandidatesDetails: totalCandidatesDetails // Details of all candidates for this requirement
+                };
+            })
+        );
+
+        // Step 9: Respond with the requirement details, assigned user counts, usernames, and candidate counts
+        res.json(requirementDetailsWithUsernames);
+    } catch (error) {
+        console.error(error); // Log error for debugging
+        res.status(500).json({ message: "Server Error", error });
+    }
+});
+
+// Delete a requirement by regId
+app.delete('/deleteRequirement/:regId', async (req, res) => {
+    const regId = req.params.regId; // Get the regId from the request parameters
+
+    try {
+        // Step 1: Find and delete the requirement by regId
+        const deletedRequirement = await NewRequirment.findOneAndDelete({ _id: regId });
+
+        if (!deletedRequirement) {
+            return res.status(404).json({ message: "Requirement not found" });
+        }
+
+        // Step 2: Find and delete the candidates assigned to this requirement
+        const deletedCandidates = await CandidateModel.deleteMany({ reqId: regId });
+
+        // Step 3: Return success message with details
+        res.status(200).json({
+            message: "Requirement and associated candidates deleted successfully",
+            deletedRequirement,
+            deletedCandidates: deletedCandidates.deletedCount // Number of deleted candidates
+        });
+    } catch (error) {
+        console.error("Error deleting requirement and candidates:", error);
+        res.status(500).json({ message: "Server error", error });
+    }
+});
+
+// PUT endpoint to update a requirement
+app.put('/editRequirement/:id', async (req, res) => {
+    const { id } = req.params; // Extract the requirement ID from the URL
+    const updateData = req.body; // Get the data to update from the request body
+    console.log(id)
+    try {
+        // Find the requirement by ID and update it
+        const updatedRequirement = await NewRequirment.findByIdAndUpdate(id, updateData, {
+            new: true, // Return the updated document
+            runValidators: true // Run schema validation
+        });
+
+        // Check if requirement was found and updated
+        if (!updatedRequirement) {
+            return res.status(404).json({ message: 'Requirement not found' });
+        }
+
+        // Respond with the updated requirement
+        res.status(200).json(updatedRequirement);
+    } catch (error) {
+        console.error('Error updating requirement:', error);
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
+
+// Update candidate status using only the candidate ID
+app.put('/updatestatus/:candidateId', async (req, res) => {
+    const candidateId = req.params.candidateId;
+    const { status } = req.body;
+
+    console.log('Request body:', req.body); // Log request body to debug
+
+    if (!status) {
+        return res.status(400).json({ message: 'Status is required' });
+    }
+
+    try {
+        const updatedMain = await CandidateModel.findOneAndUpdate(
+            { 'candidates._id': candidateId },
+            {
+                $push: {
+                    'candidates.$.Status': {
+                        Status: status,
+                        Date: new Date()
+                    }
+                }
+            },
+            { new: true }
+        );
+
+        if (!updatedMain) {
+            return res.status(404).json({ message: 'Candidate not found in any main document' });
+        }
+
+        res.status(200).json({ message: 'Status updated successfully ✅', mainDocument: updatedMain });
+    } catch (error) {
+        console.error('Error updating status:', error);
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
+
+// Requirments in Admin 
+app.get('/admingetrequirements', async (req, res) => {
+    try {
+        // Fetch all requirements
+        const requirements = await NewRequirment.find();
+
+        // Initialize an array to hold the final response
+        const enrichedRequirements = [];
+
+        // Loop through each requirement
+        for (const requirement of requirements) {
+            // Extract the clientId from the requirement
+            const clientId = requirement.clientId;
+
+            // Find users associated with this clientId in their Clients array
+            const users = await NewUser.find({ Clients: clientId });
+
+            // Get the user count
+            const userCount = users.length;
+
+            // // Get user details (you can customize the fields as needed)
+            // const userDetails = users.map(user => ({
+            //     _id: user._id,
+            //     name: user.EmployeeName, // Assuming EmployeeName is in the NewUser schema
+            //     email: user.Email,
+            //     userType: user.UserType // Assuming UserType field exists
+            // }));
+
+            // Add the requirement along with user data to the enriched requirements array
+            enrichedRequirements.push({
+                ...requirement._doc, // Spread the requirement fields
+                userCount, // Add the user count
+                // userDetails // Add the user details
+            });
+        }
+
+        // Send the enriched requirements data as response
+        res.json(enrichedRequirements);
+    } catch (err) {
+        res.status(500).json({ status: "Error", msg: err.message });
+    }
+});
+// Users Data of Requirment
+app.get('/admingetrequirements/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        // console.log(`Fetching requirement details for reqId: ${id}`); // Log the reqId for debugging
+
+        const requirement = await NewRequirment.findById(id);
+
+        if (!requirement) {
+            return res.status(404).json({ status: "Error", msg: "Requirement not found" });
+        }
+
+        const clientId = requirement.clientId;
+        const users = await NewUser.find({ Clients: clientId });
+
+        const userDetails = users.map(user => ({
+            _id: user._id,
+            name: user.EmployeeName,
+            email: user.Email,
+            userType: user.UserType
+        }));
+
+        const enrichedRequirement = {
+            ...requirement._doc,
+            userDetails
+        };
+
+        res.json(enrichedRequirement);
+    } catch (err) {
+        console.error('Server error:', err.message); // Log the error
+        res.status(500).json({ status: "Error", msg: err.message });
+    }
+});
+
 
 
 
