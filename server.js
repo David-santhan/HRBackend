@@ -1166,7 +1166,7 @@ app.put('/claim/:id', async (req, res) => {
     }
   });
    
-app.get("/actions/:id/:userid", async (req, res) => {
+  app.get("/actions/:id/:userid", async (req, res) => {
     try {
         // Extract the requirement ID and user ID from the request parameters
         const requirementId = req.params.id;
@@ -1176,6 +1176,13 @@ app.get("/actions/:id/:userid", async (req, res) => {
             return res.status(401).json({ status: 'Failed', msg: 'User not authenticated' });
         }
 
+        // Fetch the user to check their UserType
+        const user = await NewUser.findById(userId);
+        
+        if (!user) {
+            return res.status(404).json({ status: 'Failed', msg: 'User not found' });
+        }
+
         // Find the requirement by ID
         const requirement = await NewRequirment.findById(requirementId);
         
@@ -1183,11 +1190,11 @@ app.get("/actions/:id/:userid", async (req, res) => {
             return res.status(404).json({ status: 'Failed', msg: 'Requirement not found' });
         }
 
-        // Check if the logged-in user has claimed this requirement
+        // Check if the user is either a TeamLead or has claimed the requirement
         const userClaim = requirement.claimedBy.find(claim => claim.userId === userId);
 
-        if (!userClaim) {
-            return res.status(403).json({ status: 'Failed', msg: 'You have not claimed this requirement' });
+        if (!userClaim && user.UserType !== 'TeamLead') {
+            return res.status(403).json({ status: 'Failed', msg: 'You do not have access to this requirement' });
         }
 
         // Send the requirement data as response
