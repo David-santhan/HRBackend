@@ -97,7 +97,6 @@ let ConnectedtoMDB= async()=>{
         console.log("Failed to Connect to MDB ❌");
     }
 }
-
  ConnectedtoMDB();
  
  let userSchema = new mongoose.Schema({
@@ -762,6 +761,20 @@ app.get("/ClientsList", async (req, res) => {
     }
 });
 
+app.get("/allUsersCount",async(req,res)=>{
+    try{
+        // Count users of type 'user' and 'teamlead'
+        const allusers = await NewUser.find({
+            UserType: { $in: ['User', 'TeamLead'] }
+        } );
+        let allusersCount = allusers.length;
+        res.json(allusersCount); 
+        
+    } catch(err){
+        console.log(err);
+    }
+})
+
 
 app.get("/ClientsList/:id",async(req,res)=>{
     let ClientsList = await NewClient.find({_id:req.params.id});
@@ -1000,75 +1013,80 @@ app.get('/getrequirements', async (req, res) => {
     }
   });
 
-app.get('/getTeamrequirements/:userId', async (req, res) => {
-    const { userId } = req.params; 
-  
+  app.get('/getTeamrequirements/:userId', async (req, res) => {
+    const { userId } = req.params;
+
     try {
-      // Step 1: Find the user by userId
-      const user = await NewUser.findById(userId);
-  
-      if (!user) {
-        return res.status(404).json({ status: "Error", msg: "User not found" });
-      }
-  
-      // Step 2: Get the client's IDs associated with the user
-      const clientIds = user.Clients; // Assuming Clients field contains an array of client IDs
-  
-      if (!clientIds || clientIds.length === 0) {
-        return res.status(404).json({ status: "Error", msg: "No clients associated with this user" });
-      }
-  
-      // Step 3: Fetch the requirements that match the client IDs
-      const requirements = await NewRequirment.find({ clientId: { $in: clientIds } });
-  
-      if (requirements.length === 0) {
-        return res.status(404).json({ status: "Error", msg: "No requirements found for the associated clients" });
-      }
-  
-      // Step 4: Get the user's Team (team members' IDs)
-      const teamIds = user.Team;
-  
-      if (!teamIds || teamIds.length === 0) {
-        return res.status(404).json({ status: "Error", msg: "No team members associated with this user" });
-      }
-  
-      // Step 5: Find the team members from the NewUser schema
-      const teamMembers = await NewUser.find({ _id: { $in: teamIds } });
-  
-      if (!teamMembers || teamMembers.length === 0) {
-        return res.status(404).json({ status: "Error", msg: "No team members found" });
-      }
-  
-      // Total team member count
-      const totalTeamCount = teamMembers.length;
-  
-      // Step 6: Loop through each requirement and find how many team members have that requirement in their Requirements
-      const result = [];
-  
-      for (const req of requirements) {
-        const requirementId = req._id;
-  
-        // Find the count of team members who have this requirement in their Requirements array
-        const assignedCount = await NewUser.countDocuments({
-          _id: { $in: teamIds },
-          Requirements: requirementId
-        });
-  
-        // Add the requirement, assigned count, and total team count to the result array
-        result.push({
-          requirement: req,
-          assignedCount: assignedCount,
-          totalTeamCount: totalTeamCount
-        });
-      }
-  
-      // Step 7: Return the result (requirements along with the count of team members assigned to each requirement and total team count)
-      res.json(result);
-  
+        // Step 1: Find the user by userId
+        const user = await NewUser.findById(userId);
+
+        if (!user) {
+            return res.status(404).json({ status: "Error", msg: "User not found" });
+        }
+
+        // Step 2: Get the client's IDs and the user's Requirements array
+        const clientIds = user.Clients; // Assuming Clients field contains an array of client IDs
+        const userRequirementsIds = user.Requirements; // Get the user's assigned Requirements array
+
+        // Step 3: Fetch the requirements that match the client IDs from the NewRequirement schema
+        const clientRequirements = await NewRequirment.find({ clientId: { $in: clientIds } });
+
+        // Fetch the user's requirements from the NewRequirement schema using the Requirements array
+        const userRequirements = await NewRequirment.find({ _id: { $in: userRequirementsIds } });
+
+        // Combine both client-related and user-related requirements
+        const allRequirements = [...clientRequirements, ...userRequirements];
+
+        if (allRequirements.length === 0) {
+            return res.status(404).json({ status: "Error", msg: "No requirements found for the associated clients or user" });
+        }
+
+        // Step 4: Get the user's Team (team members' IDs)
+        const teamIds = user.Team;
+
+        if (!teamIds || teamIds.length === 0) {
+            return res.status(404).json({ status: "Error", msg: "No team members associated with this user" });
+        }
+
+        // Step 5: Find the team members from the NewUser schema
+        const teamMembers = await NewUser.find({ _id: { $in: teamIds } });
+
+        if (!teamMembers || teamMembers.length === 0) {
+            return res.status(404).json({ status: "Error", msg: "No team members found" });
+        }
+
+        // Total team member count
+        const totalTeamCount = teamMembers.length;
+
+        // Step 6: Loop through each requirement and find how many team members have that requirement in their Requirements array
+        const result = [];
+
+        for (const req of allRequirements) {
+            const requirementId = req._id;
+
+            // Find the count of team members who have this requirement in their Requirements array
+            const assignedCount = await NewUser.countDocuments({
+                _id: { $in: teamIds },
+                Requirements: requirementId
+            });
+
+            // Add the requirement, assigned count, and total team count to the result array
+            result.push({
+                requirement: req, // Requirement details
+                assignedCount: assignedCount, // How many team members have this requirement assigned
+                totalTeamCount: totalTeamCount // Total team count
+            });
+        }
+
+        // Step 7: Return the result (requirements along with the count of team members assigned to each requirement and total team count)
+        res.json(result);
+
     } catch (err) {
-      res.status(500).json({ status: "Error", msg: err.message });
+        res.status(500).json({ status: "Error", msg: err.message });
     }
-  });
+});
+
+
   
   app.get('/getHomeReqData/:userId', async (req, res) => {
     const { userId } = req.params;
@@ -1166,7 +1184,7 @@ app.put('/claim/:id', async (req, res) => {
     }
   });
    
-  app.get("/actions/:id/:userid", async (req, res) => {
+app.get("/actions/:id/:userid", async (req, res) => {
     try {
         // Extract the requirement ID and user ID from the request parameters
         const requirementId = req.params.id;
@@ -1361,6 +1379,7 @@ const MainSchema = new mongoose.Schema({
     candidates: [CandidateSchema],
    
 });
+
 const CandidateModel = mongoose.model('Candidate', MainSchema); // Or the correct model name
 
 const uploadFields = upload.fields([
@@ -1531,6 +1550,7 @@ app.get('/api/recruiters/:reqId', async (req, res) => {
     }
 
     try {
+        // Fetch requirements based on reqId
         const requirements = await CandidateModel.find({ reqId }).exec();
 
         if (requirements.length === 0) {
@@ -1538,15 +1558,20 @@ app.get('/api/recruiters/:reqId', async (req, res) => {
         }
 
         const recruiterIdToCandidateCount = {};
+        const recruiterIdToCandidates = {}; // Object to map recruiterId to candidate details
 
+        // Iterate through each requirement and its candidates
         requirements.forEach(requirement => {
             requirement.candidates.forEach(candidate => {
                 candidate.recruiterId.forEach(recruiterId => {
-                    if (recruiterIdToCandidateCount[recruiterId]) {
-                        recruiterIdToCandidateCount[recruiterId]++;
-                    } else {
-                        recruiterIdToCandidateCount[recruiterId] = 1;
+                    // Count candidates for each recruiter
+                    recruiterIdToCandidateCount[recruiterId] = (recruiterIdToCandidateCount[recruiterId] || 0) + 1;
+
+                    // Add candidate details to the recruiter
+                    if (!recruiterIdToCandidates[recruiterId]) {
+                        recruiterIdToCandidates[recruiterId] = []; // Initialize array for the first time
                     }
+                    recruiterIdToCandidates[recruiterId].push(candidate);
                 });
             });
         });
@@ -1557,20 +1582,22 @@ app.get('/api/recruiters/:reqId', async (req, res) => {
             return res.status(404).json({ message: 'No recruiters found for these requirements' });
         }
 
+        // Fetch recruiter details from NewUser collection
         const recruitersDetails = await NewUser.find({ _id: { $in: recruiterIds } }).exec();
 
         if (recruitersDetails.length === 0) {
             return res.status(404).json({ message: 'No details found for recruiters' });
         }
 
-        const recruitersWithCandidateCount = recruitersDetails.map(recruiter => ({
+        // Create the response with recruiter info and associated candidate details
+        const recruitersWithCandidateCountAndDetails = recruitersDetails.map(recruiter => ({
             recruiter,
             candidateCount: recruiterIdToCandidateCount[recruiter._id.toString()],
-            // Add regId if it is a part of recruiter model or adjust as needed
+            candidates: recruiterIdToCandidates[recruiter._id.toString()] || [], // Include candidate details
             regId: reqId // Assuming reqId is the same as regId in your case
         }));
 
-        res.status(200).json({ recruiters: recruitersWithCandidateCount });
+        res.status(200).json({ recruiters: recruitersWithCandidateCountAndDetails });
     } catch (error) {
         res.status(500).json({ message: 'Server error', error });
         console.error('Server Error:', error);
@@ -1946,84 +1973,298 @@ app.get('/getRequirementsCandidatesCount/:recruiterId', async (req, res) => {
     }
 });
 
+// app.get('/requirementDetailsWithAssignedUsers/:userId', async (req, res) => {
+//     const userId = req.params.userId;
+
+//     try {
+//         // Step 1: Find the user
+//         const user = await NewUser.findById(userId);
+//         if (!user) {
+//             return res.status(404).json({ message: "User not found" });
+//         }
+
+//         const teamIds = user.Team; // Get the user's team members
+//         const userClients = user.Clients; // Get the user's associated clients
+//         const userRequirementsIds = user.Requirements; // Get the user's assigned requirements
+
+//         // Step 2: Get team members' details
+//         const teamUsers = await NewUser.find({ _id: { $in: teamIds } });
+
+//         // Step 3: Get all client-related requirements
+//         const clientRequirements = await NewRequirment.find({
+//             clientId: { $in: userClients }
+//         });
+
+//         // Step 4: Get user's assigned requirements
+//         const userRequirements = await NewRequirment.find({
+//             _id: { $in: userRequirementsIds }
+//         });
+
+//         const allRequirements = [...clientRequirements, ...userRequirements]; // Combine all requirements
+
+//         // Get today's date in UTC
+//         const today = new Date();
+//         today.setUTCHours(0, 0, 0, 0); // Start of today
+//         const tomorrow = new Date(today);
+//         tomorrow.setUTCDate(today.getUTCDate() + 1); // Start of the next day
+
+//         // Step 5: Gather requirement details
+//         const requirementDetailsWithUsernames = await Promise.all(
+//             allRequirements.map(async (requirement) => {
+//                 const requirementId = requirement._id;
+
+//                 // Get users assigned to this requirement from team
+//                 const assignedUsersForThisRequirement = teamUsers.filter(teamUser =>
+//                     teamUser.Requirements.includes(requirementId)
+//                 );
+
+//                 const usernamesForThisRequirement = assignedUsersForThisRequirement.map(user => user.EmployeeName);
+//                 const userCountForThisRequirement = assignedUsersForThisRequirement.length;
+
+//                 // Step 6: Get candidate details
+//                 const requirementWithCandidates = await CandidateModel.find({
+//                     reqId: requirementId,  // Check if reqId matches
+//                     recruiterId: { 
+//                         $in: [...teamIds, userId]  // Spread teamIds and add userId to the $in array
+//                     }
+//                 }).select('candidates reqId recruiterId');           
+
+//                 // Total candidates
+//                 const totalCandidateCount = requirementWithCandidates ? requirementWithCandidates.reduce((count, req) => count + req.candidates.length, 0) : 0;
+
+//                 // Filter for today's candidates
+//                 const todayCandidates = requirementWithCandidates ? requirementWithCandidates.flatMap(req =>
+//                     req.candidates.filter(candidate => {
+//                         const uploadedOnDate = new Date(candidate.uploadedOn);
+//                         return uploadedOnDate >= today && uploadedOnDate < tomorrow;
+//                     })
+//                 ) : [];
+
+//                 const todayCandidateCount = todayCandidates.length;
+
+//                 // Step 9: Return the details
+//                 return {
+//                     requirementDetails: requirement,
+//                     userCount: userCountForThisRequirement,
+//                     assignedUsernames: usernamesForThisRequirement,
+//                     totalCandidateCount: totalCandidateCount,
+//                     todayCandidateCount: todayCandidateCount,
+//                     todayCandidates: todayCandidates,
+//                     totalCandidatesDetails: requirementWithCandidates ? requirementWithCandidates.flatMap(req => req.candidates) : []
+//                 };
+//             })
+//         );
+//         res.json(requirementDetailsWithUsernames);
+//     } catch (error) {
+//         console.error(error);
+//         res.status(500).json({ message: "Server Error", error });
+//     }
+// });
+
+// app.get('/requirementDetailsWithAssignedUsers/:userId', async (req, res) => {
+//     const userId = req.params.userId;
+
+//     try {
+//         // Step 1: Find the user to get their Team array, Clients, and Requirements
+//         const user = await NewUser.findById(userId);
+//         if (!user) {
+//             return res.status(404).json({ message: "User not found" });
+//         }
+
+//         const teamIds = user.Team; // Get the Team array
+//         const userClients = user.Clients; // Get the Clients array
+//         const userRequirementsIds = user.Requirements; // Get the user's assigned Requirements array
+
+//         // Step 2: Find all users in the team
+//         const teamUsers = await NewUser.find({
+//             _id: { $in: teamIds } // Users in the same team
+//         });
+
+//         // Step 3: Find requirements associated with the user's clients from the NewRequirement schema
+//         const clientRequirements = await NewRequirment.find({
+//             clientId: { $in: userClients } // Find requirements with the client's IDs
+//         });
+
+//         // Step 4: Find the requirements associated with the user's `Requirements` array from the NewRequirement schema
+//         const userRequirements = await NewRequirment.find({
+//             _id: { $in: userRequirementsIds } // Find requirements based on the user's assigned Requirements array
+//         });
+
+//         // Combine both client-related and user-related requirements
+//         const allRequirements = [...clientRequirements, ...userRequirements];
+
+//         // Get today's date in UTC for comparison
+//         const today = new Date();
+//         today.setUTCHours(0, 0, 0, 0); // Start of today
+//         const tomorrow = new Date(today);
+//         tomorrow.setUTCDate(today.getUTCDate() + 1); // Start of the next day
+
+//         // Step 5: Get requirement details, count users assigned to each requirement, along with their names, total candidates, and today's uploaded candidates
+//         const requirementDetailsWithUsernames = await Promise.all(
+//             allRequirements.map(async (requirement) => {
+//                 const requirementId = requirement._id;
+
+//                 // Find users in the team who are assigned this specific requirement
+//                 const assignedUsersForThisRequirement = teamUsers.filter(teamUser => teamUser.Requirements.includes(requirementId));
+
+//                 // Extract usernames and count for this requirement
+//                 const usernamesForThisRequirement = assignedUsersForThisRequirement.map(user => user.EmployeeName);
+//                 const userCountForThisRequirement = assignedUsersForThisRequirement.length;
+
+//                 // Step 6: Get the total count of candidates attached to the requirement
+//                 const requirementWithCandidates = await CandidateModel.findOne({ reqId: requirementId }).select('candidates');
+//                 const totalCandidateCount = requirementWithCandidates ? requirementWithCandidates.candidates.length : 0;
+
+//                 // Step 7: Filter candidates uploaded today
+//                 const todayCandidates = requirementWithCandidates ? requirementWithCandidates.candidates.filter(candidate => {
+//                     const uploadedOnDate = new Date(candidate.uploadedOn);
+//                     return uploadedOnDate >= today && uploadedOnDate < tomorrow;
+//                 }) : [];
+
+//                 const todayCandidateCount = todayCandidates.length;
+
+//                 // Step 8: Collect total candidate details for the requirement
+//                 const totalCandidatesDetails = requirementWithCandidates ? requirementWithCandidates.candidates : [];
+
+//                 // Step 9: Return the relevant details
+//                 return {
+//                     requirementDetails: requirement, // Details of the requirement
+//                     userCount: userCountForThisRequirement, // Number of users assigned to this requirement
+//                     assignedUsernames: usernamesForThisRequirement, // Array of usernames assigned to this requirement
+//                     totalCandidateCount: totalCandidateCount, // Total number of candidates attached to the requirement
+//                     todayCandidateCount: todayCandidateCount, // Count of candidates uploaded today
+//                     todayCandidates: todayCandidates, // Array of today's uploaded candidates
+//                     totalCandidatesDetails: totalCandidatesDetails // Details of all candidates for this requirement
+//                 };
+//             })
+//         );
+
+//         // Step 10: Respond with the requirement details, assigned user counts, usernames, and candidate counts
+//         res.json(requirementDetailsWithUsernames);
+//     } catch (error) {
+//         console.error(error); // Log error for debugging
+//         res.status(500).json({ message: "Server Error", error });
+//     }
+// });
+
+
+// Delete a requirement by regId
+
+
 app.get('/requirementDetailsWithAssignedUsers/:userId', async (req, res) => {
     const userId = req.params.userId;
 
     try {
-        // Step 1: Find the user to get their Team array and Clients
+        // Step 1: Find the user
         const user = await NewUser.findById(userId);
         if (!user) {
             return res.status(404).json({ message: "User not found" });
         }
 
-        const teamIds = user.Team; // Get the Team array
-        const userClients = user.Clients; // Get the Clients array
+        const teamIds = user.Team; // Get the user's team members
+        const userClients = user.Clients; // Get the user's associated clients
+        const userRequirementsIds = user.Requirements; // Get the user's assigned requirements
 
-        // Step 2: Find all users in the team
-        const teamUsers = await NewUser.find({
-            _id: { $in: teamIds } // Users in the same team
+        // Step 2: Get team members' details
+        const teamUsers = await NewUser.find({ _id: { $in: teamIds } });
+
+        // Step 3: Get all client-related requirements
+        const clientRequirements = await NewRequirment.find({
+            clientId: { $in: userClients }
         });
 
-        // Step 3: Find requirements associated with the user's clients from NewRequirement schema
-        const requirements = await NewRequirment.find({
-            clientId: { $in: userClients } // Find requirements with the client's IDs
+        // Step 4: Get user's assigned requirements
+        const userRequirements = await NewRequirment.find({
+            _id: { $in: userRequirementsIds }
         });
 
-        // Get today's date in UTC for comparison
+        const allRequirements = [...clientRequirements, ...userRequirements]; // Combine all requirements
+
+        // Get today's date in UTC
         const today = new Date();
         today.setUTCHours(0, 0, 0, 0); // Start of today
         const tomorrow = new Date(today);
         tomorrow.setUTCDate(today.getUTCDate() + 1); // Start of the next day
 
-        // Step 4: Get requirement details, count users assigned to each requirement, along with their names, total candidates, and today's uploaded candidates
+        // Step 5: Gather requirement details
         const requirementDetailsWithUsernames = await Promise.all(
-            requirements.map(async (requirement) => {
+            allRequirements.map(async (requirement) => {
                 const requirementId = requirement._id;
 
-                // Find users in the team who are assigned this specific requirement
-                const assignedUsersForThisRequirement = teamUsers.filter(teamUser => teamUser.Requirements.includes(requirementId));
+                // Get users assigned to this requirement from team
+                const assignedUsersForThisRequirement = teamUsers.filter(teamUser =>
+                    teamUser.Requirements.includes(requirementId)
+                );
 
-                // Extract usernames and count for this requirement
                 const usernamesForThisRequirement = assignedUsersForThisRequirement.map(user => user.EmployeeName);
                 const userCountForThisRequirement = assignedUsersForThisRequirement.length;
 
-                // Step 5: Get the total count of candidates attached to the requirement
-                const requirementWithCandidates = await CandidateModel.findOne({ reqId: requirementId }).select('candidates');
-                const totalCandidateCount = requirementWithCandidates ? requirementWithCandidates.candidates.length : 0;
+                // Step 6: Get candidate details
+                const requirementWithCandidates = await CandidateModel.find({
+                    reqId: requirementId,  // Check if reqId matches
+                    recruiterId: { 
+                        $in: [...teamIds, userId]  // Spread teamIds and add userId to the $in array
+                    }
+                }).select('candidates reqId recruiterId');           
 
-                // Step 6: Filter candidates uploaded today
-                const todayCandidates = requirementWithCandidates ? requirementWithCandidates.candidates.filter(candidate => {
+                // Separate candidates based on recruiterId (user vs team)
+                const userCandidates = requirementWithCandidates ? requirementWithCandidates.flatMap(req => 
+                    req.candidates.filter(candidate => req.recruiterId.toString() === userId)
+                ) : [];
+
+                const teamCandidates = requirementWithCandidates ? requirementWithCandidates.flatMap(req => 
+                    req.candidates.filter(candidate => teamIds.includes(req.recruiterId.toString()))
+                ) : [];
+
+                // Total candidate count
+                const totalCandidateCount = userCandidates.length + teamCandidates.length;
+
+                // Filter for today's candidates for both user and team
+                const todayUserCandidates = userCandidates.filter(candidate => {
                     const uploadedOnDate = new Date(candidate.uploadedOn);
                     return uploadedOnDate >= today && uploadedOnDate < tomorrow;
-                }) : [];
+                });
 
-                const todayCandidateCount = todayCandidates.length;
+                const todayTeamCandidates = teamCandidates.filter(candidate => {
+                    const uploadedOnDate = new Date(candidate.uploadedOn);
+                    return uploadedOnDate >= today && uploadedOnDate < tomorrow;
+                });
 
-                // Step 7: Collect total candidate details for the requirement
-                const totalCandidatesDetails = requirementWithCandidates ? requirementWithCandidates.candidates : [];
+                const todayCandidateCount = todayUserCandidates.length + todayTeamCandidates.length;
 
-                // Step 8: Return the relevant details
+                // Step 7: Combine user and team candidates into totalCandidatesDetails
+                const totalCandidatesDetails = [...userCandidates, ...teamCandidates];
+
+                // Combine today's user and team candidates
+                const combinedTodayCandidates = [...todayUserCandidates, ...todayTeamCandidates];
+
+                // Step 9: Return the details
                 return {
-                    requirementDetails: requirement, // Details of the requirement
-                    userCount: userCountForThisRequirement, // Number of users assigned to this requirement
-                    assignedUsernames: usernamesForThisRequirement, // Array of usernames assigned to this requirement
-                    totalCandidateCount: totalCandidateCount, // Total number of candidates attached to the requirement
-                    todayCandidateCount: todayCandidateCount, // Count of candidates uploaded today
-                    todayCandidates: todayCandidates, // Array of today's uploaded candidates
-                    totalCandidatesDetails: totalCandidatesDetails // Details of all candidates for this requirement
+                    requirementDetails: requirement,
+                    userCount: userCountForThisRequirement,
+                    assignedUsernames: usernamesForThisRequirement,
+                    totalCandidateCount: totalCandidateCount,
+                    todayCandidateCount: todayCandidateCount,
+                    userCandidatesCount: userCandidates.length,
+                    teamCandidatesCount: teamCandidates.length,
+                    todayUserCandidates: todayUserCandidates,
+                    todayTeamCandidates: todayTeamCandidates,
+                    totalUserCandidatesDetails: userCandidates,
+                    totalTeamCandidatesDetails: teamCandidates,
+                    totalCandidatesDetails: totalCandidatesDetails, // All candidates (user + team)
+                    combinedTodayCandidates: combinedTodayCandidates // Combined today candidates (user + team)
                 };
             })
         );
 
-        // Step 9: Respond with the requirement details, assigned user counts, usernames, and candidate counts
         res.json(requirementDetailsWithUsernames);
     } catch (error) {
-        console.error(error); // Log error for debugging
+        console.error(error);
         res.status(500).json({ message: "Server Error", error });
     }
 });
 
-// Delete a requirement by regId
+
 app.delete('/deleteRequirement/:regId', async (req, res) => {
     const regId = req.params.regId; // Get the regId from the request parameters
 
@@ -2122,28 +2363,25 @@ app.get('/admingetrequirements', async (req, res) => {
 
         // Loop through each requirement
         for (const requirement of requirements) {
-            // Extract the clientId from the requirement
+            // Extract clientId and reqId from the requirement
             const clientId = requirement.clientId;
+            const reqId = requirement._id; // Assuming this is the reqId
 
-            // Find users associated with this clientId in their Clients array
-            const users = await NewUser.find({ Clients: clientId });
+            // Find users associated with this clientId in their Clients array or reqId in Requirements array
+            const users = await NewUser.find({
+                $or: [
+                    { Clients: clientId },
+                    { Requirements: reqId }
+                ]
+            });
 
             // Get the user count
             const userCount = users.length;
-
-            // // Get user details (you can customize the fields as needed)
-            // const userDetails = users.map(user => ({
-            //     _id: user._id,
-            //     name: user.EmployeeName, // Assuming EmployeeName is in the NewUser schema
-            //     email: user.Email,
-            //     userType: user.UserType // Assuming UserType field exists
-            // }));
-
             // Add the requirement along with user data to the enriched requirements array
             enrichedRequirements.push({
                 ...requirement._doc, // Spread the requirement fields
                 userCount, // Add the user count
-                // userDetails // Add the user details
+                userDetails: users // Add the user details if needed
             });
         }
 
@@ -2153,21 +2391,33 @@ app.get('/admingetrequirements', async (req, res) => {
         res.status(500).json({ status: "Error", msg: err.message });
     }
 });
+
 // Users Data of Requirment
 app.get('/admingetrequirements/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        // console.log(`Fetching requirement details for reqId: ${id}`); // Log the reqId for debugging
 
+        // Fetch the specific requirement by ID
         const requirement = await NewRequirment.findById(id);
 
         if (!requirement) {
             return res.status(404).json({ status: "Error", msg: "Requirement not found" });
         }
 
+        // Get the clientId from the requirement
         const clientId = requirement.clientId;
-        const users = await NewUser.find({ Clients: clientId });
+        const reqId = requirement._id; // Assuming this is the reqId
 
+        // Find users associated with the clientId or reqId, and with UserType 'User' or 'TeamLead'
+        const users = await NewUser.find({
+            UserType: { $in: ['User', 'TeamLead'] }, // Filter for UserType first
+            $or: [
+                { Clients: clientId },   // Clients matching clientId
+                { Requirements: reqId }   // Requirements matching reqId
+            ]
+        });
+
+        // Map user details for the filtered users
         const userDetails = users.map(user => ({
             _id: user._id,
             name: user.EmployeeName,
@@ -2175,30 +2425,57 @@ app.get('/admingetrequirements/:id', async (req, res) => {
             userType: user.UserType
         }));
 
+        // Create an enriched response with requirement details and user data
         const enrichedRequirement = {
-            ...requirement._doc,
-            userDetails
+            ...requirement._doc, // Spread the requirement details
+            userDetails // Add the filtered user details
         };
 
+        // Send the enriched requirement data as a response
         res.json(enrichedRequirement);
     } catch (err) {
-        console.error('Server error:', err.message); // Log the error
+        console.error('Server error:', err.message); // Log the error for debugging
         res.status(500).json({ status: "Error", msg: err.message });
     }
 });
 
+app.get('/remainingusers/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
 
+        // Fetch the specific requirement by ID
+        const requirement = await NewRequirment.findById(id);
 
+        if (!requirement) {
+            return res.status(404).json({ status: "Error", msg: "Requirement not found" });
+        }
 
+        // Get the clientId and reqId from the requirement
+        const clientId = requirement.clientId;
+        const reqId = requirement._id; // Assuming this is the reqId
 
+        // Find users who do NOT have this clientId in their Clients array and Requirements
+        const remainingUsers = await NewUser.find({
+            Clients: { $ne: clientId }, // Exclude users associated with this clientId
+            Requirements: { $ne: reqId }, // Exclude users associated with this reqId
+            UserType: { $in: ['User', 'TeamLead'] } // Filter for UserType 'User' and 'TeamLead'
+        });
 
+        // Map user details for the filtered remaining users
+        const remainingUserDetails = remainingUsers.map(user => ({
+            _id: user._id,
+            name: user.EmployeeName,
+            email: user.Email,
+            userType: user.UserType
+        }));
 
-
-
-
-
-
-
+        // Send the remaining user data as a response
+        res.json(remainingUserDetails);
+    } catch (err) {
+        console.error('Server error:', err.message); // Log the error for debugging
+        res.status(500).json({ status: "Error", msg: err.message });
+    }
+});
 
 
   
