@@ -403,40 +403,37 @@ app.get("/getUserDataToADDtoTeam", async (req, res) => {
     }
 });
 
-app.post("/login",upload.none(),async(req,res)=>{
-console.log(req.body);
+app.post("/login", upload.none(), async (req, res) => {
+    console.log(req.body);
 
-let fetchedData= await NewUser.find().and({Email:req.body.Email});
-console.log(fetchedData);
-if(fetchedData.length>0){
-    if(fetchedData[0].Password == req.body.Password){
-        if(fetchedData[0].UserType == req.body.UserType){
-            // req.session.userId = fetchedData[0]._id;
-            let dataToSend={
-                EmpCode:fetchedData[0].EmpCode,
-            EmployeeName:fetchedData[0].EmployeeName,
-            Email:fetchedData[0].Email,
-            UserType:fetchedData[0].UserType,
-            ProfilePic:fetchedData[0].ProfilePic,
-            Status:fetchedData[0].Status,
-            Id:fetchedData[0]._id,
-            ClaimedRequirements:fetchedData[0].claimedRequirements,
-            Token:fetchedData[0].tokenVersion
-            }
-            res.json({status:"Success",msg:"Login Successfully ✅",data:dataToSend});
-             
-        }else{
-            res.json({status:"Failed",msg:"Invalid User ❌"})
+    // Fetch user data based on the email provided
+    let fetchedData = await NewUser.find({ Email: req.body.Email });
+    console.log(fetchedData);
+
+    // Check if the user exists
+    if (fetchedData.length > 0) {
+        // Validate the password
+        if (fetchedData[0].Password === req.body.Password) {
+            // Prepare data to send back
+            let dataToSend = {
+                EmpCode: fetchedData[0].EmpCode,
+                EmployeeName: fetchedData[0].EmployeeName,
+                Email: fetchedData[0].Email,
+                UserType: fetchedData[0].UserType, // UserType retrieved from database
+                ProfilePic: fetchedData[0].ProfilePic,
+                Status: fetchedData[0].Status,
+                Id: fetchedData[0]._id,
+                ClaimedRequirements: fetchedData[0].claimedRequirements,
+                Token: fetchedData[0].tokenVersion
+            };
+            res.json({ status: "Success", msg: "Login Successfully ✅", data: dataToSend });
+        } else {
+            res.json({ status: "Failed", msg: "Invalid Password ❌" });
         }
-    }else{
-        res.json({status:"Failed",msg:"Invalid Password ❌"})
+    } else {
+        res.json({ status: "Failed", msg: "User Does Not Exist ❌" });
     }
-    
-
-}else{
-    res.json({status:"Failed",msg:"User Does Not Exist ❌"})
-}
-})
+});
 
 const secretKey = process.env.SECRET_KEY;
 
