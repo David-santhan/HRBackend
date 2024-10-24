@@ -437,101 +437,101 @@ app.post("/login", upload.none(), async (req, res) => {
 
 const secretKey = process.env.SECRET_KEY;
 
-// app.post("/sendpasswordlink",async (req,res)=>{
-//     console.log(req.body);
-//     const {email} = req.body;
+app.post("/sendpasswordlink",async (req,res)=>{
+    console.log(req.body);
+    const {email} = req.body;
 
-//     if (!email) {
-//         res.status(401).json({status:401,message:"Enter Your Email"})
-//     }
-//     try {
-//         const userfind = await NewUser.findOne({Email:email});
-        
-//         // token generate for reset password
-
-//         const token = jwt.sign({_id:userfind._id},secretKey,{expiresIn:"300s"});
-        
-//         const setusertoken = await NewUser.findByIdAndUpdate({_id:userfind._id},{verifytoken:token},{new:true});
-         
-//         if (setusertoken) {
-//             const mailOptions = {
-//                 from:process.env.EMAIL,
-//                 to:email,
-//                 subject:"Password Reset Link",
-//                 text:`This link is valid for 5minutes http://localhost:3000/ResetPassword/${userfind.id}/${setusertoken.verifytoken}`
-//             }
-
-//             transporter.sendMail(mailOptions,(error,info)=>{
-//                 if(error){
-//                     console.log("Error",error);
-//                     res.status(401).json({status:401,message:"Email Not Send"})
-//                 }else{
-//                     console.log("Email Sent",info.response);
-//                     res.status(201).json({status:201,message:"Email Sent Successfully"})
-//                 }
-//             })
-//         }
-        
-//     } catch (error) {
-//         res.status(401).json({status:401,message:"Invalid User"})
-
-//     }
-// })
-
-app.post("/sendpasswordlink", async (req, res) => {
-    const { email } = req.body;
-
-    // Check if email is provided
     if (!email) {
-        return res.status(400).json({ status: 400, message: "Enter Your Email" });
+        res.status(401).json({status:401,message:"Enter Your Email"})
     }
-
     try {
-        // Check if the user exists
-        const userfind = await NewUser.findOne({ Email: email });
+        const userfind = await NewUser.findOne({Email:email});
+        
+        // token generate for reset password
 
-        if (!userfind) {
-            return res.status(404).json({ status: 404, message: "User not found" });
-        }
-
-        // Generate token for password reset (5-minute expiration)
-        const token = jwt.sign({ _id: userfind._id }, secretKey, { expiresIn: "300s" });
-
-        // Save token in the database
-        const setusertoken = await NewUser.findByIdAndUpdate(
-            { _id: userfind._id },
-            { verifytoken: token },
-            { new: true }
-        );
-
+        const token = jwt.sign({_id:userfind._id},secretKey,{expiresIn:"300s"});
+        
+        const setusertoken = await NewUser.findByIdAndUpdate({_id:userfind._id},{verifytoken:token},{new:true});
+         
         if (setusertoken) {
-            // Email options
             const mailOptions = {
-                from: process.env.EMAIL,
-                to: email,
-                subject: "Password Reset Link",
-                text: `This link is valid for 5 minutes: http://localhost:3000/ResetPassword/${userfind._id}/${setusertoken.verifytoken}`
-            };
+                from:process.env.EMAIL,
+                to:email,
+                subject:"Password Reset Link",
+                text:`This link is valid for 5minutes http://localhost:3000/ResetPassword/${userfind.id}/${setusertoken.verifytoken}`
+            }
 
-            // Send email
-            transporter.sendMail(mailOptions, (error, info) => {
-                if (error) {
-                    console.log("Error sending email:", error);
-                    return res.status(500).json({ status: 500, message: "Email Not Sent" });
-                } else {
-                    console.log("Email sent:", info.response);
-                    return res.status(200).json({ status: 200, message: "Email Sent Successfully" });
+            transporter.sendMail(mailOptions,(error,info)=>{
+                if(error){
+                    console.log("Error",error);
+                    res.status(401).json({status:401,message:"Email Not Send"})
+                }else{
+                    console.log("Email Sent",info.response);
+                    res.status(201).json({status:201,message:"Email Sent Successfully"})
                 }
-            });
-        } else {
-            return res.status(500).json({ status: 500, message: "Token update failed" });
+            })
         }
-
+        
     } catch (error) {
-        console.log("Error in /sendpasswordlink API:", error);
-        return res.status(500).json({ status: 500, message: "An error occurred" });
+        res.status(401).json({status:401,message:"Invalid User"})
+
     }
-});
+})
+
+// app.post("/sendpasswordlink", async (req, res) => {
+//     const { email } = req.body;
+
+//     // Check if email is provided
+//     if (!email) {
+//         return res.status(400).json({ status: 400, message: "Enter Your Email" });
+//     }
+
+//     try {
+//         // Check if the user exists
+//         const userfind = await NewUser.findOne({ Email: email });
+
+//         if (!userfind) {
+//             return res.status(404).json({ status: 404, message: "User not found" });
+//         }
+
+//         // Generate token for password reset (5-minute expiration)
+//         const token = jwt.sign({ _id: userfind._id }, secretKey, { expiresIn: "300s" });
+
+//         // Save token in the database
+//         const setusertoken = await NewUser.findByIdAndUpdate(
+//             { _id: userfind._id },
+//             { verifytoken: token },
+//             { new: true }
+//         );
+
+//         if (setusertoken) {
+//             // Email options
+//             const mailOptions = {
+//                 from: process.env.EMAIL,
+//                 to: email,
+//                 subject: "Password Reset Link",
+//                 text: `This link is valid for 5 minutes: http://localhost:3000/ResetPassword/${userfind._id}/${setusertoken.verifytoken}`
+//             };
+
+//             // Send email
+//             transporter.sendMail(mailOptions, (error, info) => {
+//                 if (error) {
+//                     console.log("Error sending email:", error);
+//                     return res.status(500).json({ status: 500, message: "Email Not Sent" });
+//                 } else {
+//                     console.log("Email sent:", info.response);
+//                     return res.status(200).json({ status: 200, message: "Email Sent Successfully" });
+//                 }
+//             });
+//         } else {
+//             return res.status(500).json({ status: 500, message: "Token update failed" });
+//         }
+
+//     } catch (error) {
+//         console.log("Error in /sendpasswordlink API:", error);
+//         return res.status(500).json({ status: 500, message: "An error occurred" });
+//     }
+// });
 
 //  verify user for forgot password
 
