@@ -479,12 +479,11 @@ const secretKey = process.env.SECRET_KEY;
 // })
 
 app.post("/sendpasswordlink", async (req, res) => {
-    console.log(req.body);
     const { email } = req.body;
 
     // Check if email is provided
     if (!email) {
-        return res.status(401).json({ status: 401, message: "Enter Your Email" });
+        return res.status(400).json({ status: 400, message: "Enter Your Email" });
     }
 
     try {
@@ -492,7 +491,7 @@ app.post("/sendpasswordlink", async (req, res) => {
         const userfind = await NewUser.findOne({ Email: email });
 
         if (!userfind) {
-            return res.status(401).json({ status: 401, message: "User not found" });
+            return res.status(404).json({ status: 404, message: "User not found" });
         }
 
         // Generate token for password reset (5-minute expiration)
@@ -518,17 +517,19 @@ app.post("/sendpasswordlink", async (req, res) => {
             transporter.sendMail(mailOptions, (error, info) => {
                 if (error) {
                     console.log("Error sending email:", error);
-                    return res.status(401).json({ status: 401, message: "Email Not Sent" });
+                    return res.status(500).json({ status: 500, message: "Email Not Sent" });
                 } else {
                     console.log("Email sent:", info.response);
-                    return res.status(201).json({ status: 201, message: "Email Sent Successfully" });
+                    return res.status(200).json({ status: 200, message: "Email Sent Successfully" });
                 }
             });
+        } else {
+            return res.status(500).json({ status: 500, message: "Token update failed" });
         }
 
     } catch (error) {
         console.log("Error in /sendpasswordlink API:", error);
-        return res.status(401).json({ status: 401, message: "Invalid User" });
+        return res.status(500).json({ status: 500, message: "An error occurred" });
     }
 });
 
