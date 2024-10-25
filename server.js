@@ -242,7 +242,6 @@ app.get('/userDetailstoAssignClient/:clientId', async (req, res) => {
     }
 });
 
-
 app.get('/userDetailsofAssignedClient/:clientId', async (req, res) => {
     const clientId = req.params.clientId;
     
@@ -477,62 +476,6 @@ app.post("/sendpasswordlink",async (req,res)=>{
 
     }
 })
-
-// app.post("/sendpasswordlink", async (req, res) => {
-//     const { email } = req.body;
-
-//     // Check if email is provided
-//     if (!email) {
-//         return res.status(400).json({ status: 400, message: "Enter Your Email" });
-//     }
-
-//     try {
-//         // Check if the user exists
-//         const userfind = await NewUser.findOne({ Email: email });
-
-//         if (!userfind) {
-//             return res.status(404).json({ status: 404, message: "User not found" });
-//         }
-
-//         // Generate token for password reset (5-minute expiration)
-//         const token = jwt.sign({ _id: userfind._id }, secretKey, { expiresIn: "300s" });
-
-//         // Save token in the database
-//         const setusertoken = await NewUser.findByIdAndUpdate(
-//             { _id: userfind._id },
-//             { verifytoken: token },
-//             { new: true }
-//         );
-
-//         if (setusertoken) {
-//             // Email options
-//             const mailOptions = {
-//                 from: process.env.EMAIL,
-//                 to: email,
-//                 subject: "Password Reset Link",
-//                 text: `This link is valid for 5 minutes: http://localhost:3000/ResetPassword/${userfind._id}/${setusertoken.verifytoken}`
-//             };
-
-//             // Send email
-//             transporter.sendMail(mailOptions, (error, info) => {
-//                 if (error) {
-//                     console.log("Error sending email:", error);
-//                     return res.status(500).json({ status: 500, message: "Email Not Sent" });
-//                 } else {
-//                     console.log("Email sent:", info.response);
-//                     return res.status(200).json({ status: 200, message: "Email Sent Successfully" });
-//                 }
-//             });
-//         } else {
-//             return res.status(500).json({ status: 500, message: "Token update failed" });
-//         }
-
-//     } catch (error) {
-//         console.log("Error in /sendpasswordlink API:", error);
-//         return res.status(500).json({ status: 500, message: "An error occurred" });
-//     }
-// });
-
 //  verify user for forgot password
 
 app.get("/ResetPasswordpage/:id/:token",async(req,res)=>{
@@ -1778,6 +1721,47 @@ app.post('/assignClient/:userId/:clientId', async (req, res) => {
         res.status(500).json({ status: 'error', msg: 'An error occurred while assigning the client.' });
     }
 });
+// Unassign Client from User
+app.post('/unassignClient/:userId/:clientId', async (req, res) => {
+    const { userId, clientId } = req.params;
+
+    // Ensure clientId is in the correct format
+    if (!mongoose.Types.ObjectId.isValid(clientId)) {
+        return res.status(400).json({ status: 'error', msg: 'Invalid Client ID format.' });
+    }
+
+    if (!clientId) {
+        return res.status(400).json({ status: 'error', msg: 'Client ID is required.' });
+    }
+
+    try {
+        // Validate userId format
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({ status: 'error', msg: 'Invalid User ID format.' });
+        }
+
+        const user = await NewUser.findById(userId);
+
+        if (!user) {
+            return res.status(404).json({ status: 'error', msg: 'User not found.' });
+        }
+
+        // Check if clientId is in the Clients array
+        const clientIndex = user.Clients.indexOf(clientId);
+        if (clientIndex !== -1) {
+            // Remove clientId from the Clients array
+            user.Clients.splice(clientIndex, 1);
+            await user.save();
+            res.json({ status: 'success', msg: 'Client unassigned successfully ✅' });
+        } else {
+            res.json({ status: 'error', msg: 'Client not assigned to this user 😊' });
+        }
+    } catch (error) {
+        console.error('Error unassigning client:', error);
+        res.status(500).json({ status: 'error', msg: 'An error occurred while unassigning the client.' });
+    }
+});
+
 // Get TL Home Details
 app.get('/TlHome/:id', async (req, res) => {
     try {
@@ -1873,6 +1857,50 @@ app.post('/assignReq/:userId/:requirementId', async (req, res) => {
         res.status(500).json({ status: 'error', msg: 'An error occurred while assigning the requirement.' });
     }
 });
+
+// Unassign Requirement from User
+app.post('/unassignReq/:userId/:requirementId', async (req, res) => {
+    const { userId, requirementId } = req.params;
+
+    // Ensure requirementId is in the correct format
+    if (!mongoose.Types.ObjectId.isValid(requirementId)) {
+        return res.status(400).json({ status: 'error', msg: 'Invalid Requirement ID format.' });
+    }
+
+    if (!requirementId) {
+        return res.status(400).json({ status: 'error', msg: 'Requirement ID is required.' });
+    }
+
+    try {
+        // Validate userId format
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({ status: 'error', msg: 'Invalid User ID format.' });
+        }
+
+        // Find the user by userId
+        const user = await NewUser.findById(userId);
+
+        if (!user) {
+            return res.status(404).json({ status: 'error', msg: 'User not found.' });
+        }
+
+        // Check if requirementId is in the Requirements array
+        if (user.Requirements.includes(requirementId)) {
+            // Remove the requirementId from the Requirements array
+            user.Requirements = user.Requirements.filter(reqId => reqId.toString() !== requirementId);
+            await user.save();  // Save the updated user document
+
+            res.json({ status: 'success', msg: 'Requirement unassigned successfully ✅' });
+        } else {
+            res.json({ status: 'error', msg: 'Requirement not found for this user 😊' });
+        }
+    } catch (error) {
+        console.error('Error unassigning requirement:', error);
+        res.status(500).json({ status: 'error', msg: 'An error occurred while unassigning the requirement.' });
+    }
+});
+
+
 // Get Total Count of the candidates
 app.get('/getTeamRequirementsCount/:userId', async (req, res) => {
     const { userId } = req.params;
@@ -2529,6 +2557,7 @@ app.get('/remainingusers/:id', async (req, res) => {
         res.status(500).json({ status: "Error", msg: err.message });
     }
 });
+
 
 
   
